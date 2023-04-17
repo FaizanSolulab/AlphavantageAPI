@@ -133,6 +133,43 @@ const getStocks = async (req: any, res: any) => {
 //   return stocks;
 // }; 
 
+//Function to be used in node-cron
+const fetchStockDataForAllSymbols = async () => {
+  logger.info('Inside fetchStockDataForAllSymbols')
+  try{
+    const users = await User.find({});
+    for(const user of users){
+      const searchedSymbols = user.searchedSymbols;
+      for(const symbol of searchedSymbols){
+        const stocks: StockDocument[] = await fetchStockData(symbol);
+  
+        if(!stocks){
+          logger.error('No symbols in db or failed to fetch data')
+        }
+  
+        const updatePromises = stocks.map((stock) => {
+          const filter = { symbol: stock.symbol };
+          const update = {
+            $push: { data: stock },
+          };
+          return Stock.findOneAndUpdate( filter, update , {
+            upsert: true,
+            new: true,
+          });
+        });
+  
+        await Promise.all(updatePromises);
+    
+      }
+
+    }
+    
+
+  } catch(error){
+    logger.error(`Error in fetchStockDataForAllSymbols: ${error}`);
+  }
+};
+
 
   
-  export{ getStocks };
+  export{ getStocks, fetchStockDataForAllSymbols };
