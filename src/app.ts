@@ -2,7 +2,7 @@ import express, { Application, Request, Response, NextFunction } from "express";
 import {  getStocks, fetchStockDataForAllSymbols } from "./controllers/stocks";
 import { registerUser, verifyOtp } from "./controllers/auth";
 import connectDb from "./config/dbonnection";
-import { verifyTokenAndAuthorization } from "./middleware/validateTokenHandler";
+import { validateToken } from "./middleware/validateTokenHandler";
 import cron from 'node-cron';
 import logger from "./config/logger";
 
@@ -16,7 +16,7 @@ app.use(express.json());
 
 app.use("/api/v1/auth/register", registerUser);
 app.use("/api/v1/auth", verifyOtp);
-app.use("/api/v1/stocks", verifyTokenAndAuthorization, getStocks);
+app.use("/api/v1/stocks", validateToken, getStocks);
 
 app.get("/", (req: Request, res: Response, next: NextFunction) => {
   res.send("hello");
@@ -29,7 +29,7 @@ app.listen(port, () => {
 
 
 //Schedules to run every day at 9:00 am
-cron.schedule('0 9 * * *', async () => {
+cron.schedule('* 9 * * *', async () => {
     logger.info('Inside cron.schedule')
     try {
         logger.info('Fetching new stock data for all symbols');

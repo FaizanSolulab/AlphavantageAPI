@@ -4,10 +4,7 @@ export interface StockDocument extends Document {
   user: any;
   symbol: string;
   timestamp: Date;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
+  stockData: Object;
 }
 
 const stockSchema = new Schema<StockDocument>({
@@ -19,28 +16,28 @@ const stockSchema = new Schema<StockDocument>({
 
   timestamp: {
     type: Date,
-    required: true,
+    // required: true,
   },
-  open: {
-    type: Number,
-    required: true,
-  },
-  high: {
-    type: Number,
-    required: true,
-  },
-  low: {
-    type: Number,
-    required: true,
-  },
-  close: {
-    type: Number,
-    required: true,
-  },
-  user: {
-     type: mongoose.Types.ObjectId, 
-     ref: 'User',
-    }
+  // open: {
+  //   type: Number,
+  //   required: true,
+  // },
+  // high: {
+  //   type: Number,
+  //   required: true,
+  // },
+  // low: {
+  //   type: Number,
+  //   required: true,
+  // },
+  // close: {
+  //   type: Number,
+  //   required: true,
+  // },
+  stockData: {
+    type: Object,
+    required: true
+  }
 
 },
 {

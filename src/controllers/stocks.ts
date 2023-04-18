@@ -21,41 +21,42 @@ const getStocks = async (req: any, res: any) => {
     try {
     const { symbol } = req.query;
     const  userId  = req.user.id;
-
-        const user: any = await User.findById({_id: userId});
+      
+        const existingStock =  await Stock.findOne({symbol});
 
         //checks if user has previously searched for the stock
-        if(user.searchedSymbols.includes(symbol)){
+        if(existingStock){
             logger.info(`Data for ${symbol} found in database`);
             logger.info(`Fetching data for ${symbol} for user ${userId}`);
-            const stocks:StockDocument[] = await Stock.find({ symbol, user: userId });
+            // const stocks:StockDocument[] = await Stock.find({ symbol, stockData });
+            
             logger.info(`Successfully fetched stocks for ${userId}`);
-            return res.status(200).json(stocks);
+            //adding the searched symbol to the user search history
+            const user:any = await User.findById({_id:userId})
+            if(!user){
+              logger.error('user not found with this symbol')
+            }
+            console.log("user", user)
+            user.searchedSymbols.push(symbol);
+            await user.save();
+            return res.status(200).json(existingStock.stockData);
         }       
   
         logger.info(`Fetching data for ${symbol} from Alpha Vantage`);
 
         //getting data from alphavantage api
-        const stocks: StockDocument[] = await fetchStockData(symbol);
-
-        if(!stocks){
+        const stock = await fetchStockData(symbol);
+        
+        if(!stock){
           logger.error(`Invalid symbol: ${symbol}`)
           res.status(400).json({error: `Invalid symbol: ${symbol}`})
         }
 
-        //adding the searched symbol to the user search history
-        user.searchedSymbols.push(symbol);
-        await user.save();
-
         //saving the stock data in database
-        const stocksWithUser = stocks.map((stock) => ({
-            ...stock,
-            user: userId,
-        }));
-        await Stock.insertMany(stocksWithUser);        
+        const creatingStock = await Stock.create({symbol: symbol, stockData: stock });       
       
     logger.info("Stocks fetched from Alpha Vantage and Stored in DB")
-      return res.status(200).json(stocks);
+      return res.status(200).json(stock);
     } 
     catch (error) {
       logger.error(`Error in getStocks: ${error}`);
@@ -68,8 +69,8 @@ const getStocks = async (req: any, res: any) => {
     const response = await axios.get<AlphaVantageResponse>(
       `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY_ADJUSTED&symbol=${symbol}&apikey=${ALPHA_VANTAGE_API}`
     );
-    const today = new Date();
-  const lastSixMonths = new Date(today.getTime() - 180 * 24 * 60 * 60 * 1000); 
+    // const today = new Date();
+  // const lastSixMonths = new Date(today.getTime() - 180 * 24 * 60 * 60 * 1000); 
   //There are 180 days in six months
   //24 hours in one day
   //60 minutes in one hour
@@ -80,96 +81,88 @@ const getStocks = async (req: any, res: any) => {
   //To be used to fetch data for last seven days
   //const lastSevenDays = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
   
-    const stockData = response.data['Time Series (Daily)'];
-    const stocks: StockDocument[] = [];
-
-
-    for(const timeStamp in stockData){
-    const timestamp = new Date(timeStamp);
-    if(timestamp >= lastSixMonths){
-        const data = stockData[timeStamp];
-        const stockDataObject:any = {
-            symbol:symbol,
-            timestamp: timestamp,
-            open: Number(data['1. open']),
-            high: Number(data['2. high']),
-            low: Number(data['3. low']),
-            close: Number(data['4. close']),
-        };
-        
-        stocks.push(stockDataObject);
-    }
-}   
-  
+    const stockData = response.data['Time Series (Daily)'];  
     logger.info(`Fetched data for ${symbol}`);
-    return stocks;
+    return stockData;
   };
-
-
-
-//-------------------Last six months ( do not work )--------------------
-// const fetchStockData = async (symbol: string) => {
-//   const response = await axios.get<AlphaVantageResponse>(
-//     `https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY_EXTENDED&symbol=${symbol}&interval=60min&slice=year1month6&apikey=${ALPHA_VANTAGE_API}`
-//   );
-
-//   const stockData = response.data['TIME_SERIES_INTRADAY'];
-
-//   const stocks: StockDocument[] = stockData.map((stock: any) => {
-//     const stockDataObject: any = {
-//       symbol: symbol,
-//       timestamp: new Date(stock.time),
-//       open: Number(stock.open),
-//       high: Number(stock.high),
-//       low: Number(stock.low),
-//       close: Number(stock.close),
-//     };
-
-//     return stockDataObject;
-//   });
-
-//   logger.info(`Fetched data for ${symbol}`);
-
-//   return stocks;
-// }; 
-
+  
 //Function to be used in node-cron
 const fetchStockDataForAllSymbols = async () => {
   logger.info('Inside fetchStockDataForAllSymbols')
   try{
-    const users = await User.find({});
+    const users = await User.find();
     for(const user of users){
       const searchedSymbols = user.searchedSymbols;
       for(const symbol of searchedSymbols){
-        const stocks: StockDocument[] = await fetchStockData(symbol);
+        const stocks = await fetchStockData(symbol);
   
         if(!stocks){
           logger.error('No symbols in db or failed to fetch data')
         }
-  
-        const updatePromises = stocks.map((stock) => {
-          const filter = { symbol: stock.symbol };
-          const update = {
-            $push: { data: stock },
-          };
-          return Stock.findOneAndUpdate( filter, update , {
-            upsert: true,
+
+        // const updatePromises = stocks.map((stock) => {
+        //   const filter = { symbol: stock.symbol };
+        //   const update = {
+        //     $push: { data: stock },
+        //   };
+          return Stock.findOneAndUpdate({
+            data: stocks,
             new: true,
           });
-        });
-  
-        await Promise.all(updatePromises);
-    
+        };
+        // await Promise.all(updatePromises);
       }
-
-    }
     
-
   } catch(error){
     logger.error(`Error in fetchStockDataForAllSymbols: ${error}`);
   }
 };
 
+export{ getStocks, fetchStockDataForAllSymbols };
 
+
+  //-------------------Last six months ( do not work )--------------------
+  // const fetchStockData = async (symbol: string) => {
+  //   const response = await axios.get<AlphaVantageResponse>(
+  //     `https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY_EXTENDED&symbol=${symbol}&interval=60min&slice=year1month6&apikey=${ALPHA_VANTAGE_API}`
+  //   );
   
-  export{ getStocks, fetchStockDataForAllSymbols };
+  //   const stockData = response.data['TIME_SERIES_INTRADAY'];
+  
+  //   const stocks: StockDocument[] = stockData.map((stock: any) => {
+  //     const stockDataObject: any = {
+  //       symbol: symbol,
+  //       timestamp: new Date(stock.time),
+  //       open: Number(stock.open),
+  //       high: Number(stock.high),
+  //       low: Number(stock.low),
+  //       close: Number(stock.close),
+  //     };
+  
+  //     return stockDataObject;
+  //   });
+  
+  //   logger.info(`Fetched data for ${symbol}`);
+  
+  //   return stocks;
+  // };
+
+
+    // const stocks: StockDocument[] = [];
+    // for(const timeStamp in stockData){
+    // const timestamp = new Date(timeStamp);
+    // if(timestamp >= lastSixMonths){
+    //     const data = stockData[timeStamp];
+    //     const stockDataObject:any = {
+    //         symbol:symbol,
+    //         timestamp: timestamp,
+    //         open: Number(data['1. open']),
+    //         high: Number(data['2. high']),
+    //         low: Number(data['3. low']),
+    //         close: Number(data['4. close']),
+    //     };
+        
+    //     stocks.push(stockDataObject);
+    // }
+
+// }   
